@@ -16,12 +16,11 @@ def handle_key():
     response = VoiceResponse()
 
     if digit == "1":
-        response.say("You selected Services. We offer AI, data science, chatbot, and analytics services.")
+        response.say("You selected Services. We offer AI and analytics.")
     elif digit == "2":
-        response.say("Our pricing starts from ninety-nine dollars per month. Please visit our website for more details.")
+        response.say("Pricing starts from ninety-nine dollars.")
     elif digit == "3":
-        response.say("Please hold while we connect you to a support executive.")
-        # Optionally: <Dial> action here
+        response.say("Connecting to a support executive.")
     else:
         response.say("Invalid input. Please try again.")
     return str(response)
