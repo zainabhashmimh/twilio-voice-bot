@@ -1,16 +1,20 @@
 from flask import Flask, request, Response
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.rest import Client
-import os
 
 app = Flask(__name__)
 
-# --- Securely Load Twilio Credentials ---
+# --- Twilio Credentials ---
 account_sid = 'ACe3080e7c3670d0bd8cc38bf5bd0924d2'
 auth_token = 'f7e94c88b8b6bd3dd5f67803abdbf3d1'
 client = Client(account_sid, auth_token)
 
-# --- Endpoint: Make Call ---
+# --- Home Route (Fixes 404 on "/") ---
+@app.route("/", methods=["GET"])
+def home():
+    return "Zomato Voicebot is running!"
+
+# --- Initiate a Call ---
 @app.route("/initiate-call", methods=["GET"])
 def initiate_call():
     try:
@@ -27,7 +31,6 @@ def initiate_call():
 @app.route("/voicebot", methods=['POST'])
 def voicebot():
     response = VoiceResponse()
-
     gather = Gather(
         input='speech dtmf',
         timeout=5,
@@ -38,32 +41,21 @@ def voicebot():
     gather.say("Hi there! Welcome to Zomato Clone. "
                "Press 1 to place an order, 2 to check your order status, or 3 to file a complaint. "
                "You can also say 'agent' to speak with a human.")
-    
     response.append(gather)
-
-    # Fallback if no input
     response.say("We didn't catch that. Redirecting you to a support agent.")
     response.redirect('/connect-agent')
-
     return Response(str(response), mimetype='text/xml')
 
-# --- Process Input ---
+# --- Handle User Selection ---
 @app.route("/handle-selection", methods=['POST'])
 def handle_selection():
     digit = request.values.get('Digits')
     speech = request.values.get('SpeechResult', '').lower()
     response = VoiceResponse()
 
-    # Normalize logic to handle both speech and digit input
     if digit == '1' or 'order' in speech:
         response.say("Sure! Please tell me your order after the beep.")
-        response.record(
-            timeout=5,
-            max_length=60,
-            transcribe=True,
-            action='/thanks',
-            method='POST'
-        )
+        response.record(timeout=5, max_length=60, transcribe=True, action='/thanks', method='POST')
 
     elif digit == '2' or 'status' in speech:
         response.say("Checking your order status. Please wait...")
@@ -71,13 +63,7 @@ def handle_selection():
 
     elif digit == '3' or 'complaint' in speech or 'issue' in speech:
         response.say("Please describe your complaint after the beep.")
-        response.record(
-            timeout=5,
-            max_length=60,
-            transcribe=True,
-            action='/thanks',
-            method='POST'
-        )
+        response.record(timeout=5, max_length=60, transcribe=True, action='/thanks', method='POST')
 
     elif 'agent' in speech or digit is None:
         response.say("Connecting you to a support agent.")
@@ -89,28 +75,28 @@ def handle_selection():
 
     return Response(str(response), mimetype='text/xml')
 
-# --- Fake Status Info ---
+# --- Check Status Endpoint ---
 @app.route("/check-status", methods=['POST'])
 def check_status():
     response = VoiceResponse()
     response.say("Your order is being prepared and will be delivered in 20 minutes. Thank you for your patience.")
     return Response(str(response), mimetype='text/xml')
 
-# --- Thank You for Voice Input ---
+# --- Thank You After Record ---
 @app.route("/thanks", methods=['POST'])
 def thanks():
     response = VoiceResponse()
     response.say("Thank you! Your message has been recorded. We'll get back to you soon.")
     return Response(str(response), mimetype='text/xml')
 
-# --- Connect to Real Agent ---
+# --- Connect to Live Agent ---
 @app.route("/connect-agent", methods=['POST'])
 def connect_agent():
     response = VoiceResponse()
     response.say("Please wait while we connect you to a support agent.")
-    response.dial("+918530894722")  # Update to your actual support number
+    response.dial("+918530894722")
     return Response(str(response), mimetype='text/xml')
 
-# --- Run App ---
+# --- Run Server ---
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True)
