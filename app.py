@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # ── Twilio credentials ──
 account_sid = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"   # ← replace in production
-auth_token  = "466b9357c94236c196edc785e15d7a84"      # ← replace in production
+auth_token  = "684b01154ba676a6e45842b730908d90"      # ← replace in production
 client = Client(account_sid, auth_token)
 
 # ── Health check ──
