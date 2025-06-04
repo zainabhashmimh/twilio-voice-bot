@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # --- Twilio Credentials ---
 account_sid = 'ACe3080e7c3670d0bd8cc38bf5bd0924d2'
-auth_token = 'f7e94c88b8b6bd3dd5f67803abdbf3d1'
+auth_token = '466b9357c94236c196edc785e15d7a84'
 client = Client(account_sid, auth_token)
 
 # --- Home Route (Fixes 404 on "/") ---
