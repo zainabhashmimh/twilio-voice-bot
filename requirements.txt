@@ -6,3 +6,12 @@ transformers
 datasets
 requests
 soundfile
+flask
+twilio
+google-generativeai
+torch
+transformers
+datasets
+torchaudio
+soundfile
+requests
