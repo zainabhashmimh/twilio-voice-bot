@@ -1,152 +1,72 @@
-from flask import Flask, request, Response
-from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
+from flask import Flask, request, Response 
 from twilio.rest import Client
+from twilio.twiml.voice_response import VoiceResponse
+import google.generativeai as genai
 
 app = Flask(__name__)
 
-# ── Twilio credentials ──
-account_sid = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"   # ← replace in production
-auth_token  = "684b01154ba676a6e45842b730908d90"      # ← replace in production
+# Twilio Credentials
+account_sid = 'ACe3080e7c3670d0bd8cc38bf5bd0924d2'
+auth_token = '684b01154ba676a6e45842b730908d90'
 client = Client(account_sid, auth_token)
 
-# ── Health check ──
-@app.route("/", methods=["GET"])
-def home():
-    return "Promatic AI / Zomato Voicebot is running!"
+# Gemini Config
+genai.configure(api_key="AIzaSyBVnNNltQB39PuUqxo8lO7nT8XldMBGoUI")
+model = genai.GenerativeModel("gemini-pro")
 
-# ── Outbound dial example ──
+# Generate Gemini reply
+def generate_reply(user_input):
+    response = model.generate_content(f"Act like a friendly support bot. The user said: '{user_input}'. Respond politely.")
+    return response.text.strip()
+
+# 1. Initiate outbound call
 @app.route("/initiate-call", methods=["GET"])
 def initiate_call():
     try:
         call = client.calls.create(
-            url="https://your-production-domain.com/voicebot",  # set to your public HTTPS URL
-            to="+917715040157",      # verified destination
-            from_="+19159952952"     # your Twilio voice number
+            url='https://your-render-url.onrender.com/voicebot',  # ✅ Update with your actual Render URL
+            to='+917715040157',   # Verified customer number
+            from_='+19159952952'  # Your Twilio number
         )
-        return f"✅ Call initiated. Call SID: {call.sid}"
+        return f"✅ Outbound call initiated: {call.sid}"
     except Exception as e:
-        return f"❌ Error initiating call: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
-# ───────────────────────────────────────
-# Inbound flow ① – DTMF menu (Promatic AI)
-# ───────────────────────────────────────
-@app.route("/voice", methods=["GET", "POST"])
-def voice():
-    vr = VoiceResponse()
-    g = Gather(num_digits=1, action="/gather", method="POST", timeout=5)
-    g.say(
-        "Welcome to Promatic A-I. "
-        "Press 1 to place an order, "
-        "2 to check order status, "
-        "or 3 to talk to a support agent.",
-        voice="alice"
-    )
-    vr.append(g)
-    vr.redirect("/voice")        # repeat if no input
-    return Response(str(vr), mimetype="text/xml")
-
-@app.route("/gather", methods=["POST"])
-def gather_digits():
-    digit = request.form.get("Digits")
-    vr = VoiceResponse()
-
-    if digit == "1":
-        vr.say("Please tell us your order after the beep.")
-        vr.record(timeout=5, max_length=60, transcribe=True,
-                  action="/thanks", method="POST")
-
-    elif digit == "2":
-        vr.say("Your order is being prepared and will be delivered in 20 minutes. Thank you for your patience.")
-
-    elif digit == "3":
-        vr.say("Connecting you to our support agent.")
-        vr.dial("+918530894722")   # verified agent number
-
-    else:
-        vr.say("Invalid input. Please try again.")
-        vr.redirect("/voice")
-
-    return Response(str(vr), mimetype="text/xml")
-
-# ───────────────────────────────────────
-# Inbound/outbound flow ② – Speech + DTMF (Zomato Clone)
-# ───────────────────────────────────────
-@app.route("/voicebot", methods=["POST"])
+# 2. Handle incoming call
+@app.route("/voicebot", methods=['POST'])
 def voicebot():
-    vr = VoiceResponse()
-    g = Gather(
-        input="speech dtmf",
+    response = VoiceResponse()
+    response.say("Hi, I'm Proma from Promatic AI. Please tell me your issue after the beep. I’m here to help.", voice='alice')
+    response.record(
         timeout=5,
-        num_digits=1,
-        action="/handle-selection",
-        method="POST"
+        transcribe=True,
+        max_length=30,
+        action='/handle-transcription',
+        method='POST'
     )
-    g.say(
-        "Hi! Welcome to Zomato Clone. "
-        "Press 1 to place an order. "
-        "Press 2 to check your order status. "
-        "Press 3 to register a complaint. "
-        "Press 0 to talk to an agent. "
-        "You can also speak your choice."
-    )
-    vr.append(g)
-    vr.say("We didn't catch that. Redirecting you to a support agent.")
-    vr.redirect("/connect-agent")
-    return Response(str(vr), mimetype="text/xml")
+    return Response(str(response), mimetype='text/xml')
 
-@app.route("/handle-selection", methods=["POST"])
-def handle_selection():
-    digit  = request.values.get("Digits")
-    speech = request.values.get("SpeechResult", "").lower()
-    vr = VoiceResponse()
+# 3. Process transcription & respond with Gemini
+@app.route("/handle-transcription", methods=['POST'])
+def handle_transcription():
+    user_input = request.form.get("TranscriptionText", "")
+    response = VoiceResponse()
 
-    if digit == "1" or "order" in speech:
-        vr.say("Sure! Please tell me your order after the beep.")
-        vr.record(timeout=5, max_length=60, transcribe=True,
-                  action="/thanks", method="POST")
+    if "not satisfied" in user_input.lower() or "talk to agent" in user_input.lower():
+        response.say("I understand. Connecting you to a live agent now.")
+        response.dial("+918530894722")  # Agent number
+        return Response(str(response), mimetype='text/xml')
 
-    elif digit == "2" or "status" in speech:
-        vr.say("Checking your order status. Please wait…")
-        vr.redirect("/check-status")
+    gemini_reply = generate_reply(user_input)
+    response.say(gemini_reply, voice="alice")
+    response.say("If you still need help, just say you're not satisfied and I will connect you to an agent.")
+    response.redirect('/voicebot')
+    return Response(str(response), mimetype='text/xml')
 
-    elif digit == "3" or any(x in speech for x in ["complaint", "issue", "problem"]):
-        vr.say("Please describe your complaint after the beep.")
-        vr.record(timeout=5, max_length=60, transcribe=True,
-                  action="/thanks", method="POST")
+# 4. Health check or root
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ Gemini-Twilio Voice Bot is running."
 
-    elif digit == "0" or "agent" in speech:
-        vr.say("Connecting you to a support agent.")
-        vr.redirect("/connect-agent")
-
-    else:
-        vr.say("Sorry, I didn’t get that. Redirecting you to an agent.")
-        vr.redirect("/connect-agent")
-
-    return Response(str(vr), mimetype="text/xml")
-
-# ── Shared utility routes ──
-@app.route("/check-status", methods=["POST"])
-def check_status():
-    vr = VoiceResponse()
-    vr.say("Your order is being prepared and will be delivered in 20 minutes. Thank you for your patience.")
-    return Response(str(vr), mimetype="text/xml")
-
-@app.route("/thanks", methods=["POST"])
-def thanks():
-    vr = VoiceResponse()
-    vr.say("Thank you! Your message has been recorded. We'll get back to you soon.")
-    return Response(str(vr), mimetype="text/xml")
-
-@app.route("/connect-agent", methods=["POST"])
-def connect_agent():
-    vr = VoiceResponse()
-    vr.say("Please wait while we connect you to a support agent.")
-    dial = Dial(timeout=10)
-    dial.number("+918530894722")
-    vr.append(dial)
-    vr.say("Sorry, we couldn’t connect you to the agent at this time.")
-    return Response(str(vr), mimetype="text/xml")
-
-# ── Run server ──
 if __name__ == "__main__":
     app.run(debug=True)
