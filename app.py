@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 # Twilio Credentials
 account_sid = 'ACe3080e7c3670d0bd8cc38bf5bd0924d2'
-auth_token = '684b01154ba676a6e45842b730908d90'
+auth_token = '96849b488f0a8355791227462684aba0'
 client = Client(account_sid, auth_token)
 
 # Gemini Config
