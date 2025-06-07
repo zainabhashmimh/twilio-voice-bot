@@ -6,35 +6,33 @@ import websockets
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
-from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
+from twilio.twiml.voice_response import VoiceResponse, Connect
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# FastAPI app
 app = FastAPI()
 
-# Get environment variables
+# Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 PORT = int(os.getenv('PORT', 10000))
 
-# OpenAI Realtime API configuration
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY is not set. Please set it in environment variables.")
+
 SYSTEM_MESSAGE = (
     "You are a helpful and bubbly AI assistant who loves to chat about "
     "anything the user is interested in and is prepared to offer them facts. "
     "You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. "
     "Always stay positive, but work in a joke when appropriate."
 )
+
 LOG_EVENT_TYPES = [
     'response.content.done', 'rate_limits.updated', 'response.done',
     'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped',
     'input_audio_buffer.speech_started', 'session.created'
 ]
-
-# Validate OpenAI API key
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is not set. Please set it in Render environment variables.")
 
 @app.get("/", response_class=JSONResponse)
 async def root():
@@ -42,20 +40,23 @@ async def root():
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def incoming_call(request: Request):
-    """Respond to an incoming call with TwiML and connect to the WebSocket"""
     response = VoiceResponse()
-    response.say("Please wait while we connect your call to the A. I. voice assistant powered by Open A I.")
+    response.say("Connecting you to our AI assistant.")
     response.pause(length=1)
-    response.say("You can start talking now.")
-    host = request.url.hostname
+    response.say("You can begin talking now.")
+
+    host = request.url.hostname or "your-app-name.onrender.com"
     connect = Connect()
-    connect.stream(url=f'wss://{host}/media-stream')
+    connect.stream(
+        url=f"wss://{host}/media-stream",
+        track="both_tracks",
+        audio_config={"codec": "mulaw", "sample_rate": 8000}
+    )
     response.append(connect)
     return HTMLResponse(content=str(response), media_type="application/xml")
 
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
-    """Handles Twilio <Stream> and relays to OpenAI's Realtime API"""
     await websocket.accept()
     print("WebSocket connected from Twilio")
 
@@ -66,16 +67,12 @@ async def media_stream(websocket: WebSocket):
             "OpenAI-Beta": "realtime=v1"
         }
     ) as openai_ws:
-        # Enable transcription by setting transcribe: true
+
         await openai_ws.send(json.dumps({
             "type": "session.create",
             "messages": [
-                {
-                    "role": "system",
-                    "content": SYSTEM_MESSAGE
-                }
-            ],
-            "transcribe": True
+                {"role": "system", "content": SYSTEM_MESSAGE}
+            ]
         }))
 
         stream_sid = None
@@ -84,6 +81,7 @@ async def media_stream(websocket: WebSocket):
             nonlocal stream_sid
             try:
                 async for message in websocket.iter_text():
+                    print("📡 Incoming Twilio message:", message)
                     data = json.loads(message)
                     if data['event'] == 'media' and openai_ws.open:
                         await openai_ws.send(json.dumps({
@@ -99,13 +97,8 @@ async def media_stream(websocket: WebSocket):
         async def to_twilio():
             try:
                 async for message in openai_ws:
+                    print("🧠 OpenAI response:", message)
                     data = json.loads(message)
-
-                    # Debug: print what user said
-                    if data.get("type") == "response.text":
-                        print("User said:", data["text"])
-
-                    # Audio response from assistant
                     if data.get("type") == "response.audio.delta" and data.get("delta"):
                         audio_base64 = base64.b64encode(
                             base64.b64decode(data["delta"])
@@ -115,11 +108,13 @@ async def media_stream(websocket: WebSocket):
                             "streamSid": stream_sid,
                             "media": {"payload": audio_base64}
                         })
-                    
-                    # Log other OpenAI events (optional)
                     elif data.get("type") in LOG_EVENT_TYPES:
                         print(f"[OpenAI Event] {data['type']}")
             except Exception as e:
                 print(f"Error sending to Twilio: {e}")
 
         await asyncio.gather(from_twilio(), to_twilio())
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
