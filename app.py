@@ -3,13 +3,13 @@ from twilio.twiml.voice_response import VoiceResponse, Gather
 
 app = Flask(__name__)
 
-@app.route("/voice", methods=['POST'])
+@app.route("/voicebot", methods=['POST'])
 def voice():
     resp = VoiceResponse()
     gather = Gather(input='speech', action='/process', speechTimeout='auto')
     gather.say("Hello, I am your assistant. How may I help you today?")
     resp.append(gather)
-    resp.redirect('/voice')  # repeat if nothing was said
+    resp.redirect('/voicebot')  # repeat if nothing was said
     return str(resp)
 
 @app.route("/process", methods=['POST'])
