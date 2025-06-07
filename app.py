@@ -62,8 +62,9 @@ def voicebot():
 @app.route("/handle-speech", methods=["POST"])
 def handle_speech():
     speech_text = request.values.get("SpeechResult", "").lower()
-    vr = VoiceResponse()
-
+if not speech_text:
+    return Response("No speech detected", mimetype="text/plain")
+    
     if "agent" in speech_text or "talk to someone" in speech_text:
         vr.say("Connecting you to a live support agent now.", voice="alice")
         vr.redirect("/connect-agent")
