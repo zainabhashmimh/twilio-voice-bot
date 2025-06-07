@@ -1,4 +1,5 @@
-Flask
+fastapi
+uvicorn
+websockets
+python-dotenv
 twilio
-google-generativeai
-gunicorn
