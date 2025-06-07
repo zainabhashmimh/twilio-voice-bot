@@ -1,122 +1,113 @@
-import os
-import json
 import base64
-import asyncio
-import websockets
-from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.websockets import WebSocketDisconnect
-from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
+import json
+import os
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.responses import PlainTextResponse, HTMLResponse
+from twilio.twiml.voice_response import VoiceResponse, Connect
+from twilio.rest import Client
+import google.generativeai as genai
 
-# Load .env variables if available
+# Load environment variables
 load_dotenv()
 
-# App setup
+# --- Configurations ---
 app = FastAPI()
 
-# Constants
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-PORT = int(os.getenv('PORT', 10000))  # Render sets this automatically
-RENDER_DOMAIN = "twilio-voice-bot-dr96.onrender.com"  # Update with your Render URL
+# Twilio credentials from .env or inline (for testing only)
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID") or "ACe3080e7c3670d0bd8cc38bf5bd0924d2"
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN") or "96849b488f0a8355791227462684aba0"
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-SYSTEM_MESSAGE = (
-    "You are a helpful and cheerful AI assistant. "
-    "Speak clearly and positively. Occasionally crack a dad joke."
-)
+# Gemini API Key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "AIzaSyBVnNNltQB39PuUqxo8lO7nT8XldMBGoUI"
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-pro")
 
-LOG_EVENTS = [
-    "response.content.done", "rate_limits.updated", "response.done",
-    "input_audio_buffer.committed", "input_audio_buffer.speech_stopped",
-    "input_audio_buffer.speech_started", "session.created"
-]
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY is missing. Set it in Render > Environment.")
+# --- AI Functions ---
 
-# Home route
-@app.get("/", response_class=JSONResponse)
-async def root():
-    return {"message": "Twilio OpenAI Voice Bot is running."}
+def speech_to_text(audio_chunk_b64):
+    # Dummy STT: Replace with Whisper or real service
+    print("STT received audio chunk")
+    return "Hello, what is the weather in Mumbai?"
 
-# Twilio incoming call route
-@app.api_route("/incoming-call", methods=["GET", "POST"])
-async def incoming_call(request: Request):
+
+def get_llm_response(text: str) -> str:
+    print(f"LLM Request: {text}")
+    try:
+        prompt = f"You are a friendly assistant. The user asked: '{text}'. Reply shortly."
+        response = gemini_model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        print(f"Gemini error: {e}")
+        return "Sorry, I am having trouble thinking right now."
+
+
+def text_to_speech(text: str) -> bytes:
+    # Dummy TTS: Returns base64 encoded silent/hello audio
+    print(f"TTS converting: {text}")
+    dummy_audio_b64 = "//u/9/7//P/7//v/8//n/8//j/9//r/+f/1/+v/5//X/6//n/9f/p/+f/z/+//4//f/8//v/8//j/+f/5//f/6//f/8/A="
+    return base64.b64decode(dummy_audio_b64)
+
+
+# --- Routes ---
+
+@app.get("/")
+def index():
+    return HTMLResponse("<h1>✅ Gemini Voice Assistant Running</h1>")
+
+
+@app.post("/voice", response_class=PlainTextResponse)
+async def voice_handler(request: Request):
+    print("📞 Incoming voice call")
+    # Fixed ngrok domain (edit below)
+    ws_url = "wss://talented-deep-quetzal.ngrok-free.app/ws"
+
     response = VoiceResponse()
-    response.say("Connecting you to our AI agent.")
-    response.pause(length=1)
-    response.say("You can begin speaking.")
-
-    # WSS to media-stream
     connect = Connect()
-    connect.stream(url=f"wss://{RENDER_DOMAIN}/media-stream")
+    connect.stream(url=ws_url)
     response.append(connect)
+    response.say(voice="alice", message="Connecting you to the Gemini assistant.")
 
-    return HTMLResponse(content=str(response), media_type="application/xml")
+    return str(response)
 
-# WebSocket handler for Twilio <Stream>
-@app.websocket("/media-stream")
-async def media_stream(websocket: WebSocket):
+
+@app.websocket("/ws")
+async def websocket_handler(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Twilio WebSocket connected")
+    print("🌐 WebSocket connected")
 
-    # Connect to OpenAI Realtime API
-    async with websockets.connect(
-        "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01",
-        extra_headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "OpenAI-Beta": "realtime=v1"
-        }
-    ) as openai_ws:
-        await openai_ws.send(json.dumps({
-            "type": "session.create",
-            "messages": [{"role": "system", "content": SYSTEM_MESSAGE}]
-        }))
+    try:
+        stream_sid = ""
+        while True:
+            message = await websocket.receive_text()
+            packet = json.loads(message)
 
-        stream_sid = None
+            if packet['event'] == 'start':
+                stream_sid = packet['start']['streamSid']
+                print(f"🎤 Stream started (SID: {stream_sid})")
 
-        async def receive_from_twilio():
-            nonlocal stream_sid
-            try:
-                async for msg in websocket.iter_text():
-                    event = json.loads(msg)
+            elif packet['event'] == 'media':
+                audio_chunk = packet['media']['payload']
+                user_text = speech_to_text(audio_chunk)
 
-                    if event.get("event") == "start":
-                        stream_sid = event["start"]["streamSid"]
-                        print(f"🔄 Stream started: {stream_sid}")
+                if user_text:
+                    reply = get_llm_response(user_text)
+                    bot_audio = text_to_speech(reply)
+                    response_packet = {
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": base64.b64encode(bot_audio).decode("utf-8")}
+                    }
+                    await websocket.send_text(json.dumps(response_packet))
+                    print("🗣️ Sent Gemini response")
 
-                    elif event.get("event") == "media":
-                        payload = event["media"]["payload"]
-                        await openai_ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": payload
-                        }))
-            except WebSocketDisconnect:
-                print("⛔ Twilio disconnected WebSocket")
-            except Exception as e:
-                print(f"❌ Error receiving from Twilio: {e}")
+            elif packet['event'] == 'stop':
+                print("🛑 Call ended")
+                break
 
-        async def send_to_twilio():
-            try:
-                async for msg in openai_ws:
-                    data = json.loads(msg)
-
-                    if data.get("type") in LOG_EVENTS:
-                        print(f"[OpenAI]: {data['type']}")
-
-                    if data.get("type") == "response.audio.delta" and data.get("delta"):
-                        try:
-                            audio_b64 = base64.b64encode(
-                                base64.b64decode(data["delta"])
-                            ).decode("utf-8")
-                            await websocket.send_json({
-                                "event": "media",
-                                "streamSid": stream_sid,
-                                "media": {"payload": audio_b64}
-                            })
-                        except Exception as e:
-                            print(f"❌ Failed to send audio to Twilio: {e}")
-            except Exception as e:
-                print(f"❌ Error sending to Twilio: {e}")
-
-        await asyncio.gather(receive_from_twilio(), send_to_twilio())
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        print("🔌 WebSocket closed")
