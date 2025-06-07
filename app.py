@@ -1,115 +1,126 @@
-import os
-import time
-import io
-import torch
-import requests
-import torchaudio
 from flask import Flask, request, Response
+from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse
 import google.generativeai as genai
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+import os
 
-# --- Flask App ---
 app = Flask(__name__)
 
-# --- Twilio Credentials ---
-account_sid = 'ACe3080e7c3670d0bd8cc38bf5bd0924d2'  # Replace with your SID
-auth_token = '96849b488f0a8355791227462684aba0'     # Replace with your Token
-twilio_client = Client(account_sid, auth_token)
+# ── Twilio credentials ──
+account_sid = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"   # Replace in production
+auth_token  = "96849b488f0a8355791227462684aba0"      # Replace in production
+client = Client(account_sid, auth_token)
 
-# --- Gemini API Key ---
+# ── Gemini setup ──
 genai.configure(api_key="AIzaSyBVnNNltQB39PuUqxo8lO7nT8XldMBGoUI")
 gemini_model = genai.GenerativeModel("gemini-pro")
 
-def generate_reply(text):
+def generate_reply(user_input):
     response = gemini_model.generate_content(
-        f"Act like a helpful and polite customer support assistant. The user said: '{text}'. Respond accordingly."
+        f"You are a friendly support bot for a food delivery app. The user said: '{user_input}'. Respond politely and briefly."
     )
     return response.text.strip()
 
-# --- Whisper Setup ---
-device = "cuda" if torch.cuda.is_available() else "cpu"
-dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-model_id = "openai/whisper-large-v3"
-
-asr_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id, torch_dtype=dtype, low_cpu_mem_usage=True, use_safetensors=True).to(device)
-processor = AutoProcessor.from_pretrained(model_id)
-asr_pipe = pipeline("automatic-speech-recognition", model=asr_model, tokenizer=processor.tokenizer, feature_extractor=processor.feature_extractor, torch_dtype=dtype, device=0 if torch.cuda.is_available() else -1)
-
-# --- Helper: Convert Twilio Audio ---
-def convert_audio(audio_bytes):
-    with open("input.wav", "wb") as f:
-        f.write(audio_bytes.read())
-
-    waveform, sr = torchaudio.load("input.wav")
-    waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
-    torchaudio.save("output.wav", waveform, 16000)
-    return "output.wav"
-
-# --- Routes ---
-@app.route("/")
+# ── Health check ──
+@app.route("/", methods=["GET"])
 def home():
-    return "✅ Voicebot with Gemini & Whisper is running."
+    return "✅ Promatic AI Voicebot is running."
 
+# ── Initiate outbound call ──
 @app.route("/initiate-call", methods=["GET"])
 def initiate_call():
     try:
-        call = twilio_client.calls.create(
-            url='https://twilio-voice-bot-dr96.onrender.com/voicebot',  # Replace with your deployed /voicebot URL
-            to='+917715040157',   # Verified user number
-            from_='+19159952952'  # Your Twilio number
+        call = client.calls.create(
+            url="https://twilio-voice-bot-dr96.onrender.com/voicebot",  # ← Replace this with your actual URL
+            to="+917715040157",
+            from_="+19159952952"
         )
-        return f"✅ Call initiated: {call.sid}"
+        return f"✅ Call initiated. Call SID: {call.sid}"
     except Exception as e:
-        return f"❌ Error: {e}"
+        return f"❌ Error initiating call: {str(e)}"
 
+# ── Main Voicebot Route ──
 @app.route("/voicebot", methods=["POST"])
 def voicebot():
-    response = VoiceResponse()
-    response.say("Hi! I am Proma from Promatic AI. Tell me your problem after the beep.", voice='alice')
-    response.record(
+    vr = VoiceResponse()
+    g = Gather(
+        input="speech",
         timeout=5,
-        max_length=15,
-        play_beep=True,
-        action='/handle-recording',
-        method='POST'
+        action="/handle-speech",
+        method="POST"
     )
-    return Response(str(response), mimetype='text/xml')
+    g.say(
+        "Hi! This is Proma from Promatic AI food support. How can I help you today? You can say things like 'place an order', 'check my order status', or 'talk to an agent'.",
+        voice="alice"
+    )
+    vr.append(g)
+    vr.say("Sorry, I didn’t catch that. Connecting you to an agent.")
+    vr.redirect("/connect-agent")
+    return Response(str(vr), mimetype="text/xml")
 
-@app.route("/handle-recording", methods=["POST"])
-def handle_recording():
-    recording_url = request.form.get("RecordingUrl", "")
-    print("🎙 Recording URL:", recording_url)
+# ── Handle User's Speech Input ──
+@app.route("/handle-speech", methods=["POST"])
+def handle_speech():
+    speech_text = request.values.get("SpeechResult", "").lower()
+    vr = VoiceResponse()
 
-    try:
-        time.sleep(1)  # Ensure audio is available
-        audio_response = requests.get(recording_url)
-        converted_path = convert_audio(io.BytesIO(audio_response.content))
-        transcript = asr_pipe(converted_path)["text"]
-        print("📝 Transcript:", transcript)
-    except Exception as e:
-        print("❌ Whisper Error:", str(e))
-        transcript = ""
+    if "agent" in speech_text or "talk to someone" in speech_text:
+        vr.say("Connecting you to a live support agent now.", voice="alice")
+        vr.redirect("/connect-agent")
+        return Response(str(vr), mimetype="text/xml")
 
-    response = VoiceResponse()
+    elif "order" in speech_text and "status" in speech_text:
+        vr.say("Checking your order status. Please wait.", voice="alice")
+        vr.redirect("/check-status")
+        return Response(str(vr), mimetype="text/xml")
 
-    if not transcript:
-        response.say("Sorry, I couldn't hear you clearly. Let's try again.", voice='alice')
-        response.redirect('/voicebot')
-        return Response(str(response), mimetype='text/xml')
+    elif "place" in speech_text or "order" in speech_text:
+        vr.say("Great! Please tell me what you’d like to order after the beep.", voice="alice")
+        vr.record(timeout=5, max_length=60, transcribe=True, action="/thanks", method="POST")
+        return Response(str(vr), mimetype="text/xml")
 
-    if "agent" in transcript.lower() or "not satisfied" in transcript.lower():
-        response.say("Connecting you to a live agent now.", voice='alice')
-        response.dial("+918530894722")  # Agent phone number
-        return Response(str(response), mimetype='text/xml')
+    elif any(keyword in speech_text for keyword in ["complaint", "issue", "problem"]):
+        vr.say("I'm sorry to hear that. Please describe your issue after the beep.", voice="alice")
+        vr.record(timeout=5, max_length=60, transcribe=True, action="/thanks", method="POST")
+        return Response(str(vr), mimetype="text/xml")
 
-    gemini_response = generate_reply(transcript)
-    response.say(gemini_response, voice='alice')
-    response.say("If you're still not satisfied, just say 'talk to agent'.", voice='alice')
-    response.redirect('/voicebot')
-    return Response(str(response), mimetype='text/xml')
+    else:
+        reply = generate_reply(speech_text)
+        vr.say(reply, voice="alice")
+        vr.say("If you're not satisfied, just say 'talk to agent' and I’ll connect you.")
+        vr.redirect("/voicebot")
+        return Response(str(vr), mimetype="text/xml")
 
-# --- Run locally (not needed on Render) ---
+# ── Handle Order Status ──
+@app.route("/check-status", methods=["POST"])
+def check_status():
+    vr = VoiceResponse()
+    vr.say("Your order is being prepared and will be delivered in 20 minutes. Thank you for choosing us!", voice="alice")
+    return Response(str(vr), mimetype="text/xml")
+
+# ── Handle Recording & Thanks ──
+@app.route("/thanks", methods=["POST"])
+def thanks():
+    transcript = request.form.get("TranscriptionText", "")
+    reply = generate_reply(transcript)
+    vr = VoiceResponse()
+    vr.say("Thanks for the details. Here's a summary:", voice="alice")
+    vr.say(reply, voice="alice")
+    vr.say("If you need more help, just say 'talk to agent' next time.")
+    return Response(str(vr), mimetype="text/xml")
+
+# ── Connect to Agent ──
+@app.route("/connect-agent", methods=["POST"])
+def connect_agent():
+    vr = VoiceResponse()
+    vr.say("Please hold while I connect you to a support agent.", voice="alice")
+    dial = Dial(timeout=10)
+    dial.number("+918530894722")  # Replace with actual agent number
+    vr.append(dial)
+    vr.say("Sorry, we couldn’t connect you at this time. Please try again later.", voice="alice")
+    return Response(str(vr), mimetype="text/xml")
+
+# ── Final Run Config for Render ──
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
