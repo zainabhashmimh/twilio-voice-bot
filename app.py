@@ -56,7 +56,7 @@ def home():
 def initiate_call():
     try:
         call = twilio_client.calls.create(
-            url='https://<your-render-url>.onrender.com/voicebot',  # Replace with your deployed /voicebot URL
+            url='https://twilio-voice-bot-dr96.onrender.com/voicebot',  # Replace with your deployed /voicebot URL
             to='+917715040157',   # Verified user number
             from_='+19159952952'  # Your Twilio number
         )
