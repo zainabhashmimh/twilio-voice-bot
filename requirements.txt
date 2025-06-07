@@ -1,6 +1,6 @@
 fastapi
-gunicorn
 uvicorn[standard]
-websockets
 twilio
 python-dotenv
+websockets
+gunicorn
