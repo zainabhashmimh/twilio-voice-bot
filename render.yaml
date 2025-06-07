@@ -1,10 +1,9 @@
 services:
   - type: web
-    name: gemini-twilio-bot
+    name: twilio-openai-bot
     env: python
-    region: oregon
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    plan: free
-    branch: main
-    autoDeploy: true
+    buildCommand: ""
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: OPENAI_API_KEY
+        value: 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
