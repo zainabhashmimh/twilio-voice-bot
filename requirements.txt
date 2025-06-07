@@ -1,5 +1,3 @@
-fastapi
-uvicorn[standard]
-twilio
-python-dotenv
-google-generativeai
+Flask==2.3.3
+twilio==8.10.0
+gunicorn==21.2.0
