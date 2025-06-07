@@ -16,7 +16,7 @@ load_dotenv()
 app = FastAPI()
 
 # Get environment variables
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 PORT = int(os.getenv('PORT', 10000))
 
 # OpenAI Realtime API configuration
@@ -66,6 +66,7 @@ async def media_stream(websocket: WebSocket):
             "OpenAI-Beta": "realtime=v1"
         }
     ) as openai_ws:
+        # Enable transcription by setting transcribe: true
         await openai_ws.send(json.dumps({
             "type": "session.create",
             "messages": [
@@ -73,7 +74,8 @@ async def media_stream(websocket: WebSocket):
                     "role": "system",
                     "content": SYSTEM_MESSAGE
                 }
-            ]
+            ],
+            "transcribe": True
         }))
 
         stream_sid = None
@@ -98,6 +100,12 @@ async def media_stream(websocket: WebSocket):
             try:
                 async for message in openai_ws:
                     data = json.loads(message)
+
+                    # Debug: print what user said
+                    if data.get("type") == "response.text":
+                        print("User said:", data["text"])
+
+                    # Audio response from assistant
                     if data.get("type") == "response.audio.delta" and data.get("delta"):
                         audio_base64 = base64.b64encode(
                             base64.b64decode(data["delta"])
@@ -107,6 +115,8 @@ async def media_stream(websocket: WebSocket):
                             "streamSid": stream_sid,
                             "media": {"payload": audio_base64}
                         })
+                    
+                    # Log other OpenAI events (optional)
                     elif data.get("type") in LOG_EVENT_TYPES:
                         print(f"[OpenAI Event] {data['type']}")
             except Exception as e:
