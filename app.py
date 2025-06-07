@@ -62,7 +62,7 @@ def index():
 async def voice_handler(request: Request):
     print("📞 Incoming voice call")
     # Fixed ngrok domain (edit below)
-    ws_url = "wss://talented-deep-quetzal.ngrok-free.app/ws"
+    ws_url = "https://twilio-voice-bot-dr96.onrender.com/voicebot"
 
     response = VoiceResponse()
     connect = Connect()
