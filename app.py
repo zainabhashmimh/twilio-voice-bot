@@ -7,8 +7,8 @@ import os
 app = Flask(__name__)
 
 # ── Twilio credentials ──
-account_sid = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"   # Replace in production
-auth_token  = "96849b488f0a8355791227462684aba0"      # Replace in production
+account_sid = "ACe3080e7c3670d0bd8cc38bf5bd0924d2" 
+auth_token = "96849b488f0a8355791227462684aba0"   
 client = Client(account_sid, auth_token)
 
 # ── Gemini setup ──
@@ -31,7 +31,7 @@ def home():
 def initiate_call():
     try:
         call = client.calls.create(
-            url="https://twilio-voice-bot-dr96.onrender.com/voicebot",  # ← Replace this with your actual URL
+            url="https://twilio-voice-bot-dr96.onrender.com/voicebot", 
             to="+917715040157",
             from_="+19159952952"
         )
@@ -62,9 +62,13 @@ def voicebot():
 @app.route("/handle-speech", methods=["POST"])
 def handle_speech():
     speech_text = request.values.get("SpeechResult", "").lower()
-if not speech_text:
-    return Response("No speech detected", mimetype="text/plain")
-    
+    vr = VoiceResponse()
+
+    if not speech_text:
+        vr.say("Sorry, I didn't catch that. Please try again.", voice="alice")
+        vr.redirect("/voicebot")
+        return Response(str(vr), mimetype="text/xml")
+
     if "agent" in speech_text or "talk to someone" in speech_text:
         vr.say("Connecting you to a live support agent now.", voice="alice")
         vr.redirect("/connect-agent")
@@ -92,14 +96,14 @@ if not speech_text:
         vr.redirect("/voicebot")
         return Response(str(vr), mimetype="text/xml")
 
-# ── Handle Order Status ──
+# ── Order Status ──
 @app.route("/check-status", methods=["POST"])
 def check_status():
     vr = VoiceResponse()
     vr.say("Your order is being prepared and will be delivered in 20 minutes. Thank you for choosing us!", voice="alice")
     return Response(str(vr), mimetype="text/xml")
 
-# ── Handle Recording & Thanks ──
+# ── Recording Response ──
 @app.route("/thanks", methods=["POST"])
 def thanks():
     transcript = request.form.get("TranscriptionText", "")
@@ -110,7 +114,7 @@ def thanks():
     vr.say("If you need more help, just say 'talk to agent' next time.")
     return Response(str(vr), mimetype="text/xml")
 
-# ── Connect to Agent ──
+# ── Connect to Live Agent ──
 @app.route("/connect-agent", methods=["POST"])
 def connect_agent():
     vr = VoiceResponse()
@@ -121,7 +125,7 @@ def connect_agent():
     vr.say("Sorry, we couldn’t connect you at this time. Please try again later.", voice="alice")
     return Response(str(vr), mimetype="text/xml")
 
-# ── Final Run Config for Render ──
+# ── Main Execution ──
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
