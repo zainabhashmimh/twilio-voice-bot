@@ -2,14 +2,8 @@ services:
   - type: web
     name: telephony-voicebot
     env: python
-    plan: free
-    region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     envVars:
-      - key: TWILIO_ACCOUNT_SID
-        value: ACe3080e7c3670d0bd8cc38bf5bd0924d2
-      - key: TWILIO_AUTH_TOKEN
-        value: 5888201f8aca6f08c09dcd9dd6a794df
-      - key: DOMAIN
-        value: https://twilio-voice-bot-dr96.onrender.com/voicebot
+      - key: PORT
+        value: 10000
