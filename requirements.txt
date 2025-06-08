@@ -8,3 +8,4 @@ TTS
 soundfile
 numpy
 twilio
+hypercorn
