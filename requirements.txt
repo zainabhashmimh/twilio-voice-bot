@@ -1,10 +1,11 @@
 fastapi
-hypercorn
-python-dotenv
+gunicorn
+uvicorn[standard]
 transformers
 torch
 openai-whisper
 TTS
 soundfile
 numpy
+python-dotenv
 twilio
