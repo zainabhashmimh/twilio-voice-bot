@@ -1,8 +1,10 @@
 fastapi
 uvicorn
-twilio
 python-dotenv
-whisper
+openai-whisper
 transformers
+torch
 TTS
 soundfile
+numpy
+twilio
