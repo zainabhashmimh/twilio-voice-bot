@@ -1,15 +1,18 @@
-services:
-  - type: web
-    name: promatic-ai-voicebot
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10
-      - key: TWILIO_ACCOUNT_SID
-        value: ACe3080e7c3670d0bd8cc38bf5bd0924d2
-      - key: TWILIO_AUTH_TOKEN
-        value: 5888201f8aca6f08c09dcd9dd6a794df
-      - key: RENDER_DOMAIN
-        value: twilio-voice-bot-dr96.onrender.com/voicebot
+type: web
+name: promatic-ai-voicebot
+runtime: python
+buildCommand: pip install -r requirements.txt
+startCommand: gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+envVars:
+
+key: PYTHON_VERSION
+value: 3.10
+
+key: TWILIO_ACCOUNT_SID
+value: ACe3080e7c3670d0bd8cc38bf5bd0924d2
+
+key: TWILIO_AUTH_TOKEN
+value: 5888201f8aca6f08c09dcd9dd6a794df
+
+key: RENDER_DOMAIN
+value: twilio-voice-bot-dr96.onrender.com
