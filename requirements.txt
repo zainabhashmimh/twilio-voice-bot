@@ -9,3 +9,7 @@ soundfile
 numpy
 python-dotenv
 twilio
+whisper
+coqui-tts
+soundfile
+python-dotenv
