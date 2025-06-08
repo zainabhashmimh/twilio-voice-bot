@@ -1,10 +1,10 @@
 fastapi
-uvicorn[standard]
-twilio
+uvicorn
 python-dotenv
-whisper
+twilio
 transformers
 torch
-TTS
-webrtcvad
+sentencepiece
 soundfile
+openai-whisper
+TTS
