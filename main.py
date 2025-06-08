@@ -1,24 +1,27 @@
-import os, base64, json, tempfile
+import os
+import base64
+import json
+import tempfile
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import PlainTextResponse
-from twilio.twiml.voice_response import VoiceResponse, Connect, Dial
+from twilio.twiml.voice_response import VoiceResponse, Connect
 import whisper
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from TTS.api import TTS
 import soundfile as sf
 import numpy as np
 
-# --- Load environment variables ---
+# Load environment variables
 load_dotenv()
 TWILIO_ACCOUNT_SID = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"
 TWILIO_AUTH_TOKEN = "5888201f8aca6f08c09dcd9dd6a794df"
-RENDER_DOMAIN = "twilio-voice-bot-dr96.onrender.com"
+RENDER_DOMAIN = "https://twilio-voice-bot-dr96.onrender.com""
 
-# --- Initialize FastAPI App ---
+# Initialize FastAPI App
 app = FastAPI()
 
-# --- Load AI Models on Startup ---
+# Load Models on Startup
 print("⏳ Loading Whisper STT...")
 whisper_model = whisper.load_model("base")
 
@@ -29,7 +32,7 @@ llm = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 print("⏳ Loading Coqui TTS...")
 tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC")
 
-# --- Utilities ---
+# Utilities
 def transcribe_audio(file_path):
     return whisper_model.transcribe(file_path)["text"]
 
@@ -42,7 +45,12 @@ def synthesize_speech(text):
     audio_array = tts.tts(text)
     return audio_array, tts.synthesizer.output_sample_rate
 
-# --- Twilio Voice Webhook ---
+# Health Check for Render
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
+
+# Twilio Voice Webhook
 @app.post("/voicebot", response_class=PlainTextResponse)
 async def voicebot(request: Request):
     ws_url = f"wss://{RENDER_DOMAIN}/ws"
@@ -53,7 +61,7 @@ async def voicebot(request: Request):
     response.say("Connecting you to the Promatic AI assistant.", voice="alice")
     return str(response)
 
-# --- WebSocket Endpoint ---
+# WebSocket Handler
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -79,13 +87,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 print(f"🗣️ User said: {transcript}")
 
-                # Dissatisfaction Detection
                 dissatisfied_phrases = ["not helpful", "human", "bad", "transfer"]
                 if any(p in transcript.lower() for p in dissatisfied_phrases):
                     print("⚠️ Detected dissatisfaction. Transferring to human agent...")
                     transfer_twiml = VoiceResponse()
                     transfer_twiml.say("Transferring your call to a human agent. Please hold.", voice="alice")
-                    transfer_twiml.dial("+91XXXXXXXXXX")  # Replace with your human number
+                    transfer_twiml.dial("+918530894722")  # replace with real number
                     await websocket.send_text(json.dumps({"event": "stop"}))
                     await websocket.close()
                     return
@@ -94,7 +101,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"🤖 Bot reply: {reply}")
 
                 audio_array, sample_rate = synthesize_speech(reply)
-
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as bot_wav:
                     sf.write(bot_wav.name, np.array(audio_array), sample_rate, subtype='PCM_16')
                     with open(bot_wav.name, "rb") as f:
@@ -118,5 +124,3 @@ async def websocket_endpoint(websocket: WebSocket):
             break
 
     await websocket.close()
-
-# No if __name__ == "__main__": needed when using Gunicorn
