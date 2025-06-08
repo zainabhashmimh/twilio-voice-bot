@@ -2,23 +2,23 @@ import os, base64, json, tempfile
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import PlainTextResponse
-from twilio.twiml.voice_response import VoiceResponse, Connect
+from twilio.twiml.voice_response import VoiceResponse, Connect, Dial
 import whisper
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from TTS.api import TTS
 import soundfile as sf
-import numpy as np  # Required to handle audio arrays
+import numpy as np
 
 # --- Load environment variables ---
 load_dotenv()
 TWILIO_ACCOUNT_SID = "ACe3080e7c3670d0bd8cc38bf5bd0924d2"
 TWILIO_AUTH_TOKEN = "5888201f8aca6f08c09dcd9dd6a794df"
-RENDER_DOMAIN = "twilio-voice-bot-dr96.onrender.com/voicebot"
+RENDER_DOMAIN = "twilio-voice-bot-dr96.onrender.com"
 
 # --- Initialize FastAPI App ---
 app = FastAPI()
 
-# --- Load Models at Startup ---
+# --- Load AI Models on Startup ---
 print("⏳ Loading Whisper STT...")
 whisper_model = whisper.load_model("base")
 
@@ -29,10 +29,9 @@ llm = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 print("⏳ Loading Coqui TTS...")
 tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC")
 
-# --- Helper Functions ---
+# --- Utilities ---
 def transcribe_audio(file_path):
-    result = whisper_model.transcribe(file_path)
-    return result["text"]
+    return whisper_model.transcribe(file_path)["text"]
 
 def generate_response(prompt):
     inputs = tokenizer(prompt, return_tensors="pt")
@@ -41,14 +40,9 @@ def generate_response(prompt):
 
 def synthesize_speech(text):
     audio_array = tts.tts(text)
-    sample_rate = tts.synthesizer.output_sample_rate
-    return audio_array, sample_rate
+    return audio_array, tts.synthesizer.output_sample_rate
 
-# --- HTTP Route for Twilio Voice Webhook ---
-@app.get("/")
-def index():
-    return {"message": "✅ Promatic AI Voice Bot is running."}
-
+# --- Twilio Voice Webhook ---
 @app.post("/voicebot", response_class=PlainTextResponse)
 async def voicebot(request: Request):
     ws_url = f"wss://{RENDER_DOMAIN}/ws"
@@ -59,7 +53,7 @@ async def voicebot(request: Request):
     response.say("Connecting you to the Promatic AI assistant.", voice="alice")
     return str(response)
 
-# --- WebSocket Endpoint for Audio Stream ---
+# --- WebSocket Endpoint ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -84,6 +78,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     transcript = transcribe_audio(tmp_wav.name)
 
                 print(f"🗣️ User said: {transcript}")
+
+                # Dissatisfaction Detection
+                dissatisfied_phrases = ["not helpful", "human", "bad", "transfer"]
+                if any(p in transcript.lower() for p in dissatisfied_phrases):
+                    print("⚠️ Detected dissatisfaction. Transferring to human agent...")
+                    transfer_twiml = VoiceResponse()
+                    transfer_twiml.say("Transferring your call to a human agent. Please hold.", voice="alice")
+                    transfer_twiml.dial("+91XXXXXXXXXX")  # Replace with your human number
+                    await websocket.send_text(json.dumps({"event": "stop"}))
+                    await websocket.close()
+                    return
+
                 reply = generate_response(transcript)
                 print(f"🤖 Bot reply: {reply}")
 
@@ -113,8 +119,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.close()
 
-# --- Run Locally (for development) ---
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+# No if __name__ == "__main__": needed when using Gunicorn
