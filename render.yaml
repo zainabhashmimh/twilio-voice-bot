@@ -1,12 +1,15 @@
 services:
   - type: web
-    name: twilio-ai-voice-bot
-    runtime: python
-    region: oregon  # or ohio or frankfurt
+    name: telephony-voicebot
+    env: python
+    plan: free
+    region: oregon
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker main:app
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     envVars:
-      - key: OPENAI_API_KEY
-        value: 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
-      - key: PORT
-        value: 10000
+      - key: TWILIO_ACCOUNT_SID
+        value: ACe3080e7c3670d0bd8cc38bf5bd0924d2
+      - key: TWILIO_AUTH_TOKEN
+        value: 5888201f8aca6f08c09dcd9dd6a794df
+      - key: DOMAIN
+        value: https://twilio-voice-bot-dr96.onrender.com/voicebot
